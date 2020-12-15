@@ -1,0 +1,9 @@
+path = params[0]
+content = params[1:]
+content = content.join(" ")
+file = get_shell.host_computer.File(path)
+if not file then get_shell.host_computer.touch(path.split("/")[:-1].join("/"), path.split("/")[-1])
+file = get_shell.host_computer.File(path)
+file.set_content(file.get_content + "\n" + content)
+
+
