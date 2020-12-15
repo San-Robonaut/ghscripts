@@ -1,0 +1,30 @@
+clear_screen
+Decode = function(password)
+	shift_num = password.len % 10 // Cannot shift more than ten
+
+	out = []
+	shift = function(char, num)
+		return char - num
+	end function
+	
+	for i in range(0, password.len - 1)
+		charcode = password[i].code
+		if charcode >= 48 and charcode <= 57 then
+			if charcode < 48 then charcode = charcode + 10
+			if charcode > 57 then charcode = charcode - 10
+			charcode = shift(charcode, shift_num)
+		else if charcode >= 65 and charcode <= 90 then
+			if charcode < 65 then charcode = charcode + 26
+			if charcode > 90 then charcode = charcode - 26
+			charcode = shift(charcode, shift_num)
+		else if charcode >= 97 and charcode <= 122 then
+			if charcode < 97 then charcode = charcode + 26
+			if charcode > 122 then charcode = charcode - 26
+			charcode = shift(charcode, shift_num)
+		end if
+		out.push(char(charcode))
+	end for
+	return out.join("")
+end function
+
+exit(Decode(params.join(" ")))

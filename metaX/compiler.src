@@ -1,0 +1,27 @@
+if params.len < 1 or params[0] == "-h" or params[0] == "--help" then exit("compiler [path] (destination)")
+
+if not params.len >= 2 then
+	dest = "/bin"
+else
+	dest = params[1]
+end if
+
+filepath = params[0]
+if filepath[-1] == "*" then
+	if filepath == "*" then
+		folder = get_shell().host_computer.File(current_path)
+		for file in folder.get_files
+			print(file.name)
+			get_shell.build(file.path, dest)
+		end for
+	else
+		filepath = filepath[0:-1]
+		folder = get_shell().host_computer.File(filepath)
+		for file in folder.get_files
+			print(file.name)
+			get_shell.build(file.path, dest)
+		end for
+	end if
+else
+	get_shell.build(filepath, dest)
+end if

@@ -1,0 +1,10 @@
+delay = 1
+if params.len > 0 then delay = params[0].to_int
+while true
+	get_shell.launch("/bin/compiler", "metaX/*")
+	wait(delay)
+end while
+
+
+
+

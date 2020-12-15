@@ -1,0 +1,106 @@
+if params.len < 4 or params[0] == "-h" or params[0] == "--help" then exit("<b>Usage: metaSploit [ip_address] [port] [mem_address] [vuln] (extra)</b>")	
+if not is_valid_ip(params[0]) then exit("Invalid ip address")
+if not get_shell.host_computer.is_network_active then exit("Can't connect. No internet access.")
+
+metaxploit = include_lib("/lib/metaxploit.so")
+if not metaxploit then
+	metaxploit = include_lib(get_shell.host_computer.current_path + "/metaxploit.so")
+	if not metaxploit then metaxploit = include_lib(home_dir + "/metaxploit.so")
+end if
+if not metaxploit then exit("Couldn't locate metaxploit. Please install (correctly).")
+
+ipAddress = params[0]
+port = params[1]
+mem_address = params[2]
+vuln = params[3]
+
+net_session = metaxploit.net_use(ipAddress, port)
+if not net_session then net_session = metaxploit.net_use(ipAddress)
+if not net_session then exit("Couldn't connect")
+metalib = net_session.dump_lib
+
+if params.len == 5 then
+	extra = params[4]
+	result = metalib.overflow(mem_address, vuln, extra)
+else
+	result = metalib.overflow(mem_address, vuln)
+end if
+
+if result == null then exit()
+type = typeof(result)
+if type == "shell" then result.start_terminal
+if type == "computer" then
+	passFile = result.File("/etc/passwd")
+	if not passFile then exit("Password file is missing.")
+	if passFile.has_permission("r") then
+		if passFile == null then exit("Password file is empty.")
+		fileLocation = get_shell.host_computer.current_path
+		createFile = get_shell.host_computer.File(fileLocation+"/pass.txt")
+		if createFile then createFile.delete
+		get_shell.host_computer.touch(fileLocation, "pass.txt")
+		get_shell.host_computer.File(fileLocation+"/pass.txt").set_content(result.File("/etc/passwd").content)
+		createFile = get_shell.host_computer.File(fileLocation+"/pass.txt")
+	else
+		exit("Unable to access password file")
+	end if
+	if createFile == null then
+		createFile.delete
+		exit("Downloaded password file is empty.")
+	end if
+	
+	get_shell.launch("/bin/decipher", fileLocation+"/pass.txt")
+end if
+if type == "file" then
+	passFile = result
+	if passFile.has_permission("r") then
+		if passFile.is_binary == true then exit(passFile.name + " (" + passFile.path + ") is a binary")
+		if passFile == null then exit("Password file is empty.")
+		fileLocation = get_shell.host_computer.current_path
+		createFile = get_shell.host_computer.File(fileLocation+"/file.txt")
+		if createFile then createFile.delete
+		get_shell.host_computer.touch(fileLocation, "file.txt")
+		get_shell.host_computer.File(fileLocation+"/file.txt").set_content(result.get_content)
+		createFile = get_shell.host_computer.File(fileLocation+"/file.txt")
+	else
+		exit("Cannot open Password file")
+	end if
+	if createFile == null then
+		createFile.delete
+		exit("Downloaded password file is empty.")
+	end if
+	
+	get_shell.launch("/bin/decipher", fileLocation+"/file.txt")
+end if
+if type == "router" then
+	router = result
+	ports = router.used_ports
+	print("Scanning: ")
+	print(format_columns("BSSID ESSID IP KERNEL_VERSION\n" + router.bssid_name + " " + router.essid_name + " " + router.public_ip + " " + router.kernel_version))
+	print("Firewall rules: \n" + router.firewall_rules)
+	print("Connected Machines: ")
+	for ip in router.devices_lan_ip
+		print(ip)
+	end for
+	info = "PORT STATE SERVICE VERSION LIB LAN"
+	if(ports.len == 0) then exit("Scan finished. No open ports.")
+	for port in ports
+		net_session = metaxploit.net_use(ipAddress, port.port_number)
+		if not net_session then net_session = metaxploit.net_use(ipAddress)
+		if not net_session then exit("Could not establish metaxploit net session")
+		metalib = net_session.dump_lib
+		service_info = router.port_info(port)
+		lan_ips = port.get_lan_ip
+		port_status = "OPEN"
+		push = true
+		for lib in libs
+			if lib.lib_name == metalib.lib_name and lib.version == metalib.version then push = false
+		end for
+		if push == true then libs.push(metalib)
+		
+		if(port.is_closed and not isLanIp) then
+			port_status = "CLOSED"
+		end if
+		info = info + "\n" + port.port_number + " " + port_status + " " + service_info + " " + metalib.lib_name + " " + lan_ips
+	end for
+	print(format_columns(info) + "\n")
+	end if

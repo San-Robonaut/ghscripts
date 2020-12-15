@@ -1,0 +1,52 @@
+comp = get_shell.host_computer
+if not comp.active_net_card == "WIFI" then exit("Need Wifi Access")
+
+crypto = include_lib("/lib/crypto.so")
+if not crypto then
+	crypto = include_lib(get_shell.host_computer.current_path + "/crypto.so")
+	if not crypto then crypto = include_lib(home_dir + "/crypto.so")
+end if
+if not crypto then exit("Couldn't locate crypto. Please install (correctly).")
+
+networks = comp.wifi_networks("wlan0")
+
+nets = {}
+
+for network in networks
+	nets[network.split(" ")[0]] = network.split(" ")[2]
+	print(network)
+end for
+
+if comp.File(home_dir + "/nets.txt") then
+	comp.File(home_dir + "/nets.txt").set_content("")	
+else
+	comp.touch(home_dir, "nets.txt")
+end if
+
+crypto.airmon("start", "wlan0")
+
+max = 7000
+
+checkNet = function(net, maxacks=7000)
+	if get_shell.host_computer.File(home_dir + "/file.cap") then get_shell.host_computer.File(home_dir + "/file.cap").delete
+	soos = crypto.aireplay(net, nets[net], maxacks)
+	if soos then
+		print(soos)
+	end if
+	pass = crypto.aircrack(home_dir + "/file.cap")
+	if pass == null then 
+		globals.max = globals.max + 3000
+		checkNet(net, globals.max)
+	end if
+	print(net + " " + nets[net] + " " + pass)
+	netsfile = comp.File(home_dir + "/nets.txt")
+	if not netsfile then comp.touch(home_dir, "nets.txt")
+	netsfile.set_content(netsfile.get_content + "\n" + net + " " + nets[net] + " " + pass)
+end function
+
+for net in nets.indexes
+	globals.max = 7000
+	checkNet(net)
+end for
+print(comp.File(home_dir + "nets.txt").get_content)
+

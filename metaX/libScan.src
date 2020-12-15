@@ -1,0 +1,53 @@
+if params.len > 0 and params[0] == "-h" or params.len > 0 and params[0] == "--help" then exit("<b>Usage: libScan (path)</b>")
+
+metaxploit = include_lib("/lib/metaxploit.so")
+if not metaxploit then
+	metaxploit = include_lib(get_shell.host_computer.current_path + "/metaxploit.so")
+	if not metaxploit then metaxploit = include_lib(home_dir + "/metaxploit.so")
+end if
+if not metaxploit then exit("Couldn't locate metaxploit. Please install (correctly).")
+
+libs = []
+
+if params.len > 0 then
+	libpath = params[0]
+	if libpath[-3:] == ".so" then
+		metalib = metaxploit.load(get_shell.host_computer.File(libpath))
+		libs.push(metalib)
+	end if
+	if libpath[-1] == "/" then
+		folder = get_shell.host_computer.File(libpath)
+		for file in folder.get_files
+			if file.name[-3:] == ".so" then
+				metalib = metaxploit.load(get_shell.host_computer.File(file.path))
+				libs.push(metalib)
+			end if
+		end for
+	end if
+else
+	folder = get_shell.host_computer.File("/lib/")
+	for file in folder.get_files
+		if file.name[-3:] == ".so" then
+			metalib = metaxploit.load(file.path)
+			if metalib == null then
+				print(file.path + " couldn't be loaded")
+			end if
+			libs.push(metalib)
+		end if
+	end for
+end if
+
+for metalib in libs
+	print("Scanning: " + metalib.lib_name + " " + metalib.version)
+	memAreas = metaxploit.scan(metalib)
+	print("Vulnerable Areas: " + memAreas)
+	print("----------------------------------------")
+	for area in memAreas
+		print("Area: " + area)
+		print("Vulnerabilities:")
+		print(metaxploit.scan_address(metalib, area))
+	end for
+	print
+	print
+	wait(0.5)
+end for

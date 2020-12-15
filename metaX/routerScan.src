@@ -57,3 +57,18 @@ for port in ports
 	info = info + "\n" + port.port_number + " " + port_status + " " + service_info + " " + metalib.lib_name + " " + lan_ips
 end for
 print(format_columns(info) + "\n")
+print
+print
+for metalib in libs
+	print("Scanning: " + metalib.lib_name + " " + metalib.version)
+	memAreas = metaxploit.scan(metalib)
+	print("Vulnerable Areas: " + memAreas)
+	print("----------------------------------------")
+	for area in memAreas
+		print("Area: " + area)
+		print("Vulnerabilities:")
+		print(metaxploit.scan_address(metalib, area))
+	end for
+	print
+	print
+end for

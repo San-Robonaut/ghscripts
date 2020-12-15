@@ -1,0 +1,214 @@
+//command: nmap
+if params.len < 1 or params[0] == "-h" or params[0] == "--help" then exit("<b>Usage: megaScan [ip_address] (extra) </b>")	
+if not is_valid_ip(params[0]) then exit("nmap: invalid ip address")
+if not get_shell.host_computer.is_network_active then exit("nmap: can't connect. No internet access.")
+
+metaxploit = include_lib("/lib/metaxploit.so")
+if not metaxploit then
+	metaxploit = include_lib(current_path + "/metaxploit.so")
+	if not metaxploit then metaxploit = include_lib(home_dir + "/metaxploit.so")
+end if
+if not metaxploit then exit("Couldn't locate metaxploit. Please install (correctly).")
+
+ipAddress = params[0]
+isLanIp = is_lan_ip( ipAddress )
+
+if isLanIp then
+	router = get_router;
+else 
+	router = get_router( ipAddress )
+end if
+
+if router == null then exit("nmap: ip address not found")
+ports = null
+
+if not isLanIp then
+	ports = router.used_ports
+else
+	ports = router.device_ports(ipAddress)
+end if
+
+if ports == null then exit("nmap: ip address not found")
+if typeof(ports) == "string" then exit(ports)
+
+if(ports.len == 0) then exit("Scan finished. No open ports.")
+
+libs = {}
+
+for port in ports
+	if not port.is_closed == false then continue
+	net_session = metaxploit.net_use(ipAddress, port.port_number)
+	if not net_session then print("Couldn't establish metaxploit net session")
+	libs.push(port.port_number)
+end for
+
+for port in libs.indexes
+	libs[port] = {}
+	net_session = metaxploit.net_use(ipAddress, port)
+	if not net_session then
+		print("Couldn't load lib")
+		continue
+	end if
+	metalib = net_session.dump_lib
+	areas = metaxploit.scan(metalib)
+	for b in areas
+		libs[port].push(b)
+	end for
+	for area in libs[port].indexes
+		libs[port][area] = {}
+		vulns = metaxploit.scan_address(metalib, area)
+		vulns = vulns.split("Unsafe check: ")[1:-1]
+		// list of names and conditions
+		for vuln in vulns
+			i = vulns.indexOf(vuln)
+			vuln = vuln.split(".")[0].split(" ")[-1]
+			vuln = vuln.replace("<b>", "").replace("</b>", "")
+			vulns[i] = vuln
+		end for
+		libs[port][area] = vulns
+	end for
+end for
+// 55.198.17.50
+
+extra = "newPass"
+if params.len == 2 then extra = params[1]
+
+results = []
+
+makerevshell = function(result)
+	if result.host_computer.touch("rshell.txt") then
+		path = result.host_computer.File("rshell.txt").path.replace("rshell.txt", "")
+	end if
+	if result.host_computer.File("metaxploit.so") then result.host_computer.File("metaxploit.so").delete
+	get_shell.scp("/lib/metaxploit.so", path, result)
+	file = result.host_computer.File("rshell.txt")
+	if file then
+		file.set_content("metaxploit = include_lib(""metaxploit.so"");metaxploit.rshell_client(" + get_shell.host_computer.public_ip + ", 1227, ""Fileexplorer"")")
+		result.build("rshell.txt", path)
+		get_shell.launch("rshell_interface")
+		result.launch("rshell")
+	else
+		print("Couldn't create file")
+	end if
+end function
+
+for port in libs.indexes
+	net_session = metaxploit.net_use(ipAddress, port)
+	if not net_session then
+		print("Couldn't load lib")
+		continue
+	end if
+	metalib = net_session.dump_lib
+	areas = metaxploit.scan(metalib)
+	for area in libs[port].indexes
+		for vuln in libs[port][area]
+			resone = metalib.overflow(area, vuln)
+			restwo = metalib.overflow(area, vuln, extra)
+			if resone then results.push(resone)
+			if typeof(resone) == "shell" then makerevshell(resone)
+			if restwo then results.push(restwo)
+			if typeof(restwo) == "shell" then makerevshell(restwo)
+		end for
+	end for
+end for
+
+for result in results
+	if result == null then continue
+	type = typeof(result)
+	print("\n" * 3)
+	print("-" * 25)
+	print(type[0].upper + type[1:])
+	print("-" * 25)
+	print("\n" * 3)
+	if type == "shell" then
+		result.start_terminal
+		if result.host_computer.touch("rshell.txt") then
+			path = result.host_computer.File("rshell.txt").path.replace("rshell.txt", "")
+		else
+			print("Couldn't create reverse shell")
+			continue
+		end if
+		if result.host_computer.File("metaxploit.so") then result.host_computer.File("metaxploit.so").delete
+		get_shell.scp("/lib/metaxploit.so", path, result)
+		result.host_computer.File("rshell.txt").set_content("metaxploit = include_lib(""metaxploit.so"");metaxploit.rshell_client(" + get_shell.host_computer.public_ip + ", 1227, ""Fileexplorer"")")
+		result.build("rshell.txt", path)
+		get_shell.launch("rshell_interface")
+		result.launch("rshell")
+	end if
+	if type == "computer" then
+		passFile = result.File("/etc/passwd")
+		if not passFile then exit("Password file is missing.")
+		if passFile.has_permission("r") then
+			if passFile == null then exit("Password file is empty.")
+			fileLocation = current_path
+			createFile = get_shell.host_computer.File(fileLocation+"/pass.txt")
+			if createFile then createFile.delete
+			get_shell.host_computer.touch(fileLocation, "pass.txt")
+			get_shell.host_computer.File(fileLocation+"/pass.txt").set_content(result.File("/etc/passwd").get_content)
+			createFile = get_shell.host_computer.File(fileLocation+"/pass.txt")
+		else
+			exit("Unable to access password file")
+		end if
+		if createFile == null then
+			createFile.delete
+			exit("Downloaded password file is empty.")
+		end if
+		
+		get_shell.launch("/bin/decipher", fileLocation+"/pass.txt")
+	end if
+	if type == "file" then
+		passFile = result
+		if passFile.has_permission("r") then
+			if passFile.is_binary == true then exit(passFile.name + " (" + passFile.path + ") is a binary")
+			if passFile == null then exit("Password file is empty.")
+			fileLocation = get_shell.host_computer.current_path
+			createFile = get_shell.host_computer.File(fileLocation+"/file.txt")
+			if createFile then createFile.delete
+			get_shell.host_computer.touch(fileLocation, "file.txt")
+			get_shell.host_computer.File(fileLocation+"/file.txt").set_content(result.get_content)
+			createFile = get_shell.host_computer.File(fileLocation+"/file.txt")
+		else
+			exit("Cannot open Password file")
+		end if
+		if createFile == null then
+			createFile.delete
+			exit("Downloaded password file is empty.")
+		end if
+		
+		get_shell.launch("/bin/decipher", fileLocation+"/file.txt")
+	end if
+	if type == "router" then
+		router = result
+		ports = router.used_ports
+		print("Scanning: ")
+		print(format_columns("BSSID ESSID IP KERNEL_VERSION" + router.bssid_name + " " + router.essid_name + " " + router.public_ip + " " + router.kernel_version))
+		print("Firewall rules: " + router.firewall_rules)
+		print("Connected Machines: ")
+		for ip in router.devices_lan_ip
+			print(ip)
+		end for
+		info = "PORT STATE SERVICE VERSION LIB LAN"
+		if(ports.len == 0) then exit("Scan finished. No open ports.")
+		for port in ports
+			net_session = metaxploit.net_use(ipAddress, port.port_number)
+			if not net_session then net_session = metaxploit.net_use(ipAddress)
+			if not net_session then exit("Could not establish metaxploit net session")
+			metalib = net_session.dump_lib
+			service_info = router.port_info(port)
+			lan_ips = port.get_lan_ip
+			port_status = "OPEN"
+			push = true
+			for lib in libs
+				if lib.lib_name == metalib.lib_name and lib.version == metalib.version then push = false
+			end for
+			if push == true then libs.push(metalib)
+			
+			if(port.is_closed and not isLanIp) then
+				port_status = "CLOSED"
+			end if
+			info = info + "" + port.port_number + " " + port_status + " " + service_info + " " + metalib.lib_name + " " + lan_ips
+		end for
+		print(format_columns(info) + "")
+	end if
+	end for
+
