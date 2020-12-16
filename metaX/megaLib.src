@@ -69,25 +69,32 @@ for result in results
 	print("-" * 25)
 	print("\n" * 3)
 	if type == "shell" then
+		//result.start_terminal
+		//if result.host_computer.touch("rshell.txt") then
+		//	path = result.host_computer.File("rshell.txt").path.replace("rshell.txt", "")
+		//else
+		//	print("Couldn't create reverse shell")
+		//	continue
+		//end if
+		//if result.host_computer.File("metaxploit.so") then result.host_computer.File("metaxploit.so").delete
+		//get_shell.scp("/lib/metaxploit.so", path, result)
+		//result.host_computer.File("rshell.txt").set_content("metaxploit = include_lib(""metaxploit.so"");metaxploit.rshell_client(" + get_shell.host_computer.public_ip + ", 1227, ""Fileexplorer"")")
+		//result.build("rshell.txt", path)
+		//get_shell.launch("rshell_interface")
+		//result.launch("rshell")
 		result.start_terminal
-		if result.host_computer.touch("rshell.txt") then
-			path = result.host_computer.File("rshell.txt").path.replace("rshell.txt", "")
-		else
-			print("Couldn't create reverse shell")
-			continue
-		end if
-		if result.host_computer.File("metaxploit.so") then result.host_computer.File("metaxploit.so").delete
-		get_shell.scp("/lib/metaxploit.so", path, result)
-		result.host_computer.File("rshell.txt").set_content("metaxploit = include_lib(""metaxploit.so"");metaxploit.rshell_client(" + get_shell.host_computer.public_ip + ", 1227, ""Fileexplorer"")")
-		result.build("rshell.txt", path)
-		get_shell.launch("rshell_interface")
-		result.launch("rshell")
 	end if
 	if type == "computer" then
 		passFile = result.File("/etc/passwd")
-		if not passFile then exit("Password file is missing.")
+		if not passFile then
+			print("Password file is missing.")
+			continue
+		end if
 		if passFile.has_permission("r") then
-			if passFile == null then exit("Password file is empty.")
+			if passFile == null then
+				print("Password file is empty.")
+				continue
+			end if
 			fileLocation = current_path
 			createFile = get_shell.host_computer.File(fileLocation+"/pass.txt")
 			if createFile then createFile.delete
@@ -107,8 +114,14 @@ for result in results
 	if type == "file" then
 		passFile = result
 		if passFile.has_permission("r") then
-			if passFile.is_binary == true then exit(passFile.name + " (" + passFile.path + ") is a binary")
-			if passFile == null then exit("Password file is empty.")
+			if passFile.is_binary == true then
+				print(passFile.name + " (" + passFile.path + ") is a binary")
+				continue
+			end if
+			if passFile == null then 
+				print("Password file is empty.")
+				continue
+			end if
 			fileLocation = get_shell.host_computer.current_path
 			createFile = get_shell.host_computer.File(fileLocation+"/file.txt")
 			if createFile then createFile.delete
@@ -116,11 +129,13 @@ for result in results
 			get_shell.host_computer.File(fileLocation+"/file.txt").set_content(result.get_content)
 			createFile = get_shell.host_computer.File(fileLocation+"/file.txt")
 		else
-			exit("Cannot open Password file")
+			print("Cannot open Password file")
+			continue
 		end if
 		if createFile == null then
 			createFile.delete
-			exit("Downloaded password file is empty.")
+			print("Downloaded password file is empty.")
+			continue
 		end if
 		
 		get_shell.launch("/bin/decipher", fileLocation+"/file.txt")
@@ -136,7 +151,10 @@ for result in results
 			print(ip)
 		end for
 		info = "PORT STATE SERVICE VERSION LIB LAN"
-		if(ports.len == 0) then exit("Scan finished. No open ports.")
+		if(ports.len == 0) then 
+			print("Scan finished. No open ports.")
+			continue
+		end if
 		for port in ports
 			net_session = metaxploit.net_use(ipAddress, port.port_number)
 			if not net_session then net_session = metaxploit.net_use(ipAddress)
@@ -158,4 +176,4 @@ for result in results
 		end for
 		print(format_columns(info) + "")
 	end if
-	end for
+end for
