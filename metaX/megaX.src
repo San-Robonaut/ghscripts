@@ -114,8 +114,216 @@ for port in libs.indexes
 	end for
 end for
 
-for result in results
-	if result == null then continue
+etcpasswd = function(result)
+	passFile = result
+	if passFile.has_permission("r") then
+		if passFile.is_binary == true then
+			print(passFile.name + " (" + passFile.path + ") is a binary")
+			return
+		end if
+		if passFile == null then 
+			print("Password file is empty.")
+			return
+		end if
+		fileLocation = current_path
+		createFile = get_shell.host_computer.File(fileLocation+"/file.txt")
+		if createFile then createFile.delete
+		get_shell.host_computer.touch(fileLocation, "file.txt")
+		get_shell.host_computer.File(fileLocation+"/file.txt").set_content(result.get_content)
+		createFile = get_shell.host_computer.File(fileLocation+"/file.txt")
+	else
+		print("Cannot open Password file")
+		return
+	end if
+	if createFile == null then
+		createFile.delete
+		print("Downloaded password file is empty.")
+		return
+	end if
+	
+	get_shell.launch("/bin/decipher", fileLocation+"/file.txt")
+end if
+end function
+
+newline = "\n"
+
+read = function(file)
+	clear_screen
+	if file.has_permission("r") and not file.is_binary then
+		print(file.get_content)
+	else
+		print("Cannot read file!")
+	end if
+	user_input(":")
+end function
+
+delete = function(file)
+	clear_screen
+	if file.has_permission("w") then
+		file.delete
+	else
+		print("Cannot delete file!")
+	end if
+	user_input(":")
+end function
+
+download = function(file)
+	clear_screen
+	if file.has_permission("r") then
+		f = {}
+		f.name = file.name
+		f.content = file.get_content
+		comp = get_shell.host_computer
+		if not comp.File(home_dir + "/dl/" + f.name) then
+			comp.touch(home_dir + "/dl", f.name)
+			comp.File(home_dir + "/dl/" + f.name).set_content(f.content)
+		else
+			index = 1
+			while comp.File(home_dir + "/dl/" + f.name + "(" + index + ")")
+				index = index + 1
+			end while
+			comp.touch(home_dir + "/dl", f.name + "(" + index + ")")
+			comp.File(home_dir + "/dl/" + f.name + "(" + index + ")").set_content(f.content)
+		end if
+	else
+		print("Cannot read file!")
+	end if
+	user_input(":")
+end function
+
+max = function(a, b)
+	if a > b then return a
+	return b
+end function
+
+f = function(result)
+	clear_screen
+	content = {"folders":[], "files":[]}
+	content["folders"] = result.get_folders
+	content["files"] = result.get_files
+	
+	for folder in content["folders"]
+		folder.chmod("u+rwx", 1)
+		folder.chmod("g+rwx", 1)
+		folder.chmod("o+rwx", 1)
+	end for
+	for file in content["files"]
+		folder.chmod("u+rwx")
+		folder.chmod("g+rwx")
+		folder.chmod("o+rwx")
+	end for
+	
+	c = content["folders"] + content["files"]
+	print("Listing files in " + result.path)
+	if not result.path == "/" then info = ":0" + " <color=orange>" + result.parent.permissions + " " + result.parent.owner + " <color=#42f587>.. [folder]"
+	if result.path == "/" then info = ":0" + " <color=orange>" + result.permissions + " " + result.owner + " <color=#42f587>.. [folder]"
+	
+	index = 1
+	for obj in content["folders"]
+		color = "#42f587"
+		if not obj.is_folder then color = "#429ef5"
+		// :0 -rw-rw-r-- root ..
+		// :1 -rw-rw-r-- root /etc/passwd
+		// :2
+		attr = "text"
+		if obj.is_binary then attr = "binary"
+		if obj.is_folder then attr = "folder"
+		
+		info = info + newline + ":" + index + " <color=orange>" + obj.permissions + " " + obj.owner + " <color=" + color + ">" + obj.path + " [" + attr + "]"
+		index = index + 1
+	end for
+	info = info + newline + "-" * 10
+	index = 1
+	for obj in content["files"]
+		color = "#42f587"
+		if not obj.is_folder then color = "#429ef5"
+		// :0 -rw-rw-r-- root ..
+		// :1 -rw-rw-r-- root /etc/passwd
+		// :2
+		attr = "text"
+		if obj.is_binary then attr = "binary"
+		if obj.is_folder then attr = "folder"
+		
+		info = info + newline + ":" + index + " <color=orange>" + obj.permissions + " " + obj.owner + " <color=" + color + ">" + obj.path + " [" + attr + "]"
+		index = index + 1
+	end for
+	print(format_columns(info))
+	print
+	cmdinfo = "<b>cd Change directory to folder</b>" + newline + "<b>read</b> Read a file" + newline + "<b>delete</b> Delete a file" + newline + "<b>download</b> Download a file"
+	print(cmdinfo)
+	print("<b>exit</b> to exit")
+	input = user_input("[command] [index]>:")
+	if input.lower.trim == "exit" then
+		return
+	else
+		if input.split(" ").len < 2 then
+			print("Not enough arguments")
+			f(result)
+		end if
+		cmd = input.split(" ")[0].lower
+		param = input.split(" ")[1].val
+	end if
+	if input.lower == "cd 0" then
+		if not result.path == "/" then f(result.parent)
+		if result.path == "/" then f(result)
+	else if not param > max(content["folders"].len, content["files"].len) then
+		if cmd == "cd" then
+			param = param - 1
+			if param >= content["folders"].len then
+				print("Index too high!")
+				user_input(":")
+				f(result)
+			end if
+			f(content["folders"][param])
+		else if cmd == "read" then
+			param = param - 1
+			if param >= content["files"].len then
+				print("Index too high!")
+				user_input(":")
+				f(result)
+			end if
+			read(content["files"][param])
+			f(result)
+		else if cmd == "delete" then
+			param = param - 1
+			if param >= content["files"].len then
+				print("Index too high!")
+				user_input(":")
+				f(result)
+			end if
+			delete(content["files"][param])
+			f(result)
+		else if cmd == "download" then
+			param = param - 1
+			if param >= content["files"].len then
+				print("Index too high!")
+				user_input(":")
+				f(result)
+			end if
+			download(content["files"][param])
+			f(result)
+		else
+			print("You dummy! That's not a command!")
+			user_input(":")
+			f(result)
+		end if
+	else
+		user_input("Index too high!")
+		f(result)
+	end if
+end function
+
+fold = function(result)
+	clear_screen
+	while result.path != "/"
+		result = result.parent
+	end while
+	
+	f(result)
+end function
+
+evalResult = function(result)
+	if result == null then return
 	type = typeof(result)
 	print("\n" * 3)
 	print("-" * 25)
@@ -123,76 +331,22 @@ for result in results
 	print("-" * 25)
 	print("\n" * 3)
 	if type == "shell" then
-		//result.start_terminal
-		//if result.host_computer.touch("rshell.txt") then
-		//	path = result.host_computer.File("rshell.txt").path.replace("rshell.txt", "")
-		//else
-		//	print("Couldn't create reverse shell")
-		//	continue
-		//end if
-		//if result.host_computer.File("metaxploit.so") then result.host_computer.File("metaxploit.so").delete
-		//get_shell.scp("/lib/metaxploit.so", path, result)
-		//result.host_computer.File("rshell.txt").set_content("metaxploit = include_lib(""metaxploit.so"");metaxploit.rshell_client(" + get_shell.host_computer.public_ip + ", 1227, ""Fileexplorer"")")
-		//result.build("rshell.txt", path)
-		//get_shell.launch("rshell_interface")
-		//result.launch("rshell")
+		fold(result.host_computer.File("/"))
 		result.start_terminal
 	end if
 	if type == "computer" then
-		passFile = result.File("/etc/passwd")
-		if not passFile then
-			print("Password file is missing.")
-			continue
-		end if
-		if passFile.has_permission("r") then
-			if passFile == null then
-				print("Password file is empty.")
-				continue
-			end if
-			fileLocation = current_path
-			createFile = get_shell.host_computer.File(fileLocation+"/pass.txt")
-			if createFile then createFile.delete
-			get_shell.host_computer.touch(fileLocation, "pass.txt")
-			get_shell.host_computer.File(fileLocation+"/pass.txt").set_content(result.File("/etc/passwd").get_content)
-			createFile = get_shell.host_computer.File(fileLocation+"/pass.txt")
-		else
-			exit("Unable to access password file")
-		end if
-		if createFile == null then
-			createFile.delete
-			exit("Downloaded password file is empty.")
-		end if
-		
-		get_shell.launch("/bin/decipher", fileLocation+"/pass.txt")
+		user_input(":")
+		fold(result.File("/"))
 	end if
 	if type == "file" then
-		passFile = result
-		if passFile.has_permission("r") then
-			if passFile.is_binary == true then
-				print(passFile.name + " (" + passFile.path + ") is a binary")
-				continue
-			end if
-			if passFile == null then 
-				print("Password file is empty.")
-				continue
-			end if
-			fileLocation = get_shell.host_computer.current_path
-			createFile = get_shell.host_computer.File(fileLocation+"/file.txt")
-			if createFile then createFile.delete
-			get_shell.host_computer.touch(fileLocation, "file.txt")
-			get_shell.host_computer.File(fileLocation+"/file.txt").set_content(result.get_content)
-			createFile = get_shell.host_computer.File(fileLocation+"/file.txt")
-		else
-			print("Cannot open Password file")
-			continue
+		user_input(":")
+		if not result.is_folder then
+			// File Stuff
+			fold(result.parent)
+		else if result.is_folder then
+			// Folder Stuff
+			fold(result)
 		end if
-		if createFile == null then
-			createFile.delete
-			print("Downloaded password file is empty.")
-			continue
-		end if
-		
-		get_shell.launch("/bin/decipher", fileLocation+"/file.txt")
 	end if
 	if type == "router" then
 		router = result
@@ -207,7 +361,7 @@ for result in results
 		info = "PORT STATE SERVICE VERSION LIB LAN"
 		if(ports.len == 0) then 
 			print("Scan finished. No open ports.")
-			continue
+			return
 		end if
 		for port in ports
 			net_session = metaxploit.net_use(ipAddress, port.port_number)
@@ -230,6 +384,9 @@ for result in results
 		end for
 		print(format_columns(info) + "")
 	end if
+	if type == "number" then print("Number: " + result)
+end function
+
+for result in results
+	evalResult(result)
 end for
-
-

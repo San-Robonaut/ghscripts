@@ -1,0 +1,257 @@
+if params.len == 0 or params[0] == "-h" or params[0] == "--help" then
+	print("<b>Usage:</b> dbHack [-local / -online / -router] (ipAddress) (extra)")
+	print("<b>dbHack -local (extra)</b>")
+	print("Online and Router Arguments")
+	print("dbHack [-online / -router] [ipAddress] (extra)")
+	exit()
+end if
+
+newline = "\n"
+
+metaxploit = include_lib("/lib/metaxploit.so")
+if not metaxploit then
+	metaxploit = include_lib(current_path + "/metaxploit.so")
+	if not metaxploit then metaxploit = include_lib(home_dir + "/metaxploit.so")
+end if
+if not metaxploit then exit("<color=orange>Cannot locate metaxploit, please install correctly")
+
+comp = get_shell.host_computer
+mode = params[0]
+
+readDB = function()
+	if not comp.File(home_dir + "/db/exploits.db") then
+		exit("Couldn't locate database at: <b>" + home_dir + "/db/exploits.db</b>")
+	end if
+	edb = comp.File(home_dir + "/db/exploits.db")
+	lines = edb.get_content.split(newline)
+	
+	exploits = {}
+	for line in lines
+		if line == "" or line == newline then continue
+		if line.split("@").len <= 1 then continue
+		lib = {}
+		vuln = {}
+		lib.name = line.split(":")[0].split("@")[0]
+		lib.version = line.split(":")[0].split("@")[1]
+		area = line.split(":")[1].split("@")[0]
+		val = line.split(":")[1].split("@")[1]
+		vuln[area] = [val]
+		if exploits.hasIndex(lib.name) then
+			if exploits[lib.name].hasIndex(lib.version) then
+				if exploits[lib.name][lib.version].hasIndex(area) then
+					exploits[lib.name][lib.version][area].push(val)
+				else
+					exploits[lib.name][lib.version].push(area)
+					exploits[lib.name][lib.version][area] = [val]
+				end if
+			else
+				exploits[lib.name].push(lib.version)
+				exploits[lib.name][lib.version] = vuln
+			end if
+		else
+			exploits.push(lib.name)
+			exploits[lib.name] = {lib.version: vuln}
+		end if
+	end for
+	return exploits
+end function
+
+evalresults = function(results)
+	for result in results
+		if result == null then continue
+		type = typeof(result)
+		print("\n" * 3)
+		print("-" * 25)
+		print(type[0].upper + type[1:])
+		print("-" * 25)
+		print("\n" * 3)
+		if type == "shell" then
+			//result.start_terminal
+			//if result.host_computer.touch("rshell.txt") then
+			//	path = result.host_computer.File("rshell.txt").path.replace("rshell.txt", "")
+			//else
+			//	print("Couldn't create reverse shell")
+			//	continue
+			//end if
+			//if result.host_computer.File("metaxploit.so") then result.host_computer.File("metaxploit.so").delete
+			//get_shell.scp("/lib/metaxploit.so", path, result)
+			//result.host_computer.File("rshell.txt").set_content("metaxploit = include_lib(""metaxploit.so"");metaxploit.rshell_client(" + get_shell.host_computer.public_ip + ", 1227, ""Fileexplorer"")")
+			//result.build("rshell.txt", path)
+			//get_shell.launch("rshell_interface")
+			//result.launch("rshell")
+			result.start_terminal
+		end if
+		if type == "computer" then
+			passFile = result.File("/etc/passwd")
+			if not passFile then
+				print("Password file is missing.")
+				continue
+			end if
+			if passFile.has_permission("r") then
+				if passFile == null then
+					print("Password file is empty.")
+					continue
+				end if
+				fileLocation = current_path
+				createFile = get_shell.host_computer.File(fileLocation+"/pass.txt")
+				if createFile then createFile.delete
+				get_shell.host_computer.touch(fileLocation, "pass.txt")
+				get_shell.host_computer.File(fileLocation+"/pass.txt").set_content(result.File("/etc/passwd").get_content)
+				createFile = get_shell.host_computer.File(fileLocation+"/pass.txt")
+			else
+				exit("Unable to access password file")
+			end if
+			if createFile == null then
+				createFile.delete
+				exit("Downloaded password file is empty.")
+			end if
+			
+			get_shell.launch("/bin/decipher", fileLocation+"/pass.txt")
+		end if
+		if type == "file" then
+			passFile = result
+			if passFile.has_permission("r") then
+				if passFile.is_binary == true then
+					print(passFile.name + " (" + passFile.path + ") is a binary")
+					continue
+				end if
+				if passFile == null then 
+					print("Password file is empty.")
+					continue
+				end if
+				fileLocation = get_shell.host_computer.current_path
+				createFile = get_shell.host_computer.File(fileLocation+"/file.txt")
+				if createFile then createFile.delete
+				get_shell.host_computer.touch(fileLocation, "file.txt")
+				get_shell.host_computer.File(fileLocation+"/file.txt").set_content(result.get_content)
+				createFile = get_shell.host_computer.File(fileLocation+"/file.txt")
+			else
+				print("Cannot open Password file")
+				continue
+			end if
+			if createFile == null then
+				createFile.delete
+				print("Downloaded password file is empty.")
+				continue
+			end if
+			
+			get_shell.launch("/bin/decipher", fileLocation+"/file.txt")
+		end if
+		if type == "router" then
+			router = result
+			ports = router.used_ports
+			print("Scanning: ")
+			print(format_columns("BSSID ESSID IP KERNEL_VERSION" + router.bssid_name + " " + router.essid_name + " " + router.public_ip + " " + router.kernel_version))
+			print("Firewall rules: " + router.firewall_rules)
+			print("Connected Machines: ")
+			for ip in router.devices_lan_ip
+				print(ip)
+			end for
+			info = "PORT STATE SERVICE VERSION LIB LAN"
+			if(ports.len == 0) then 
+				print("Scan finished. No open ports.")
+				continue
+			end if
+			for port in ports
+				net_session = metaxploit.net_use(ipAddress, port.port_number)
+				if not net_session then net_session = metaxploit.net_use(ipAddress)
+				if not net_session then exit("Could not establish metaxploit net session")
+				metalib = net_session.dump_lib
+				service_info = router.port_info(port)
+				lan_ips = port.get_lan_ip
+				port_status = "OPEN"
+				push = true
+				for lib in libs
+					if lib.lib_name == metalib.lib_name and lib.version == metalib.version then push = false
+				end for
+				if push == true then libs.push(metalib)
+				
+				if(port.is_closed and not isLanIp) then
+					port_status = "CLOSED"
+				end if
+				info = info + "" + port.port_number + " " + port_status + " " + service_info + " " + metalib.lib_name + " " + lan_ips
+			end for
+			print(format_columns(info) + "")
+		end if
+	end for
+end function
+
+executeHack = function(libs, extra)
+	exploits = readDB()
+	results = []
+	for metalib in libs
+		if exploits.hasIndex(metalib.lib_name) then
+			if exploits[metalib.lib_name].hasIndex(metalib.version) then
+				areas = exploits[metalib.lib_name][metalib.version].indexes
+				for area in areas
+					values = exploits[metalib.lib_name][metalib.version][area]
+					for value in values
+						resone = metalib.overflow(area, value)
+						restwo = metalib.overflow(area, value, extra)
+						if not resone == null then results.push(resone)
+						if not restwo == null then results.push(restwo)
+					end for
+				end for
+			else
+				exit("Couldn't find any exploits for version <b>" + metalib.version + "</b> of <b>" + metalib.lib_name + "</b>!")
+			end if
+		else
+			exit("Couldn't find any exploits for <b>" + metalib.lib_name + "</b>!")
+		end if
+	end for
+	evalresults(results)
+end function
+
+findLibs = function()
+	x = {"out":[]}
+	x.find = function(folder)
+		for f in folder.get_folders + folder.get_files
+			if f.name[-3:] == ".so" then x.out.push(f)
+			if is_folder(f) then x.find(f)
+		end for
+		return x.out
+	end function
+	return x.find(get_shell.host_computer.File("/"))
+end function
+
+if mode == "-local" then
+	extra = "newPass"
+	if params.len >= 2 then extra = params[1]
+	// local lib scan
+	libs = []
+	for lib in findLibs
+		libs.push(metaxploit.load(lib.path))
+	end for
+	
+	executeHack(libs, extra)
+else if mode == "-online" or mode == "-router" then
+	if params.len <= 1 then exit("You need to provide an IP address")
+	ipAddress = params[1]
+	if not is_valid_ip(ipAddress) then exit("Not a valid IP")
+	extra = "newPass"
+	if params.len >= 3 then extra = params[2]
+	
+	if mode == "-online" then
+		// scan metalibs obtained from netsessions
+		libs = []
+		router = get_router( ipAddress )
+		ports = router.device_ports(str(ipAddress))
+		for port in ports
+			if not port.is_closed == false then continue
+			net_session = metaxploit.net_use(ipAddress, port.port_number)
+			if not net_session then print("Couldn't establish metaxploit net session")
+			libs.push(net_session.dump_lib)
+		end for
+		
+		executeHack(libs, extra)
+	else
+		// scan metalibs obtained from netsessions without ports
+		libs = []
+		libs.push(metaxploit.net_use(ipAddress).dump_lib)
+		
+		executeHack(libs, extra)
+	end if
+else
+	exit("<color=red>Invalid Mode!")
+end if
+

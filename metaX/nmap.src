@@ -1,24 +1,28 @@
-//command: nmap
-if params.len != 1 or params[0] == "-h" or params[0] == "--help" then exit("<b>Usage: metaScan [ip_address]</b>")	
-if not is_valid_ip(params[0]) then exit("nmap: invalid ip address")
-if not get_shell.host_computer.is_network_active then exit("nmap: can't connect. No internet access.")
+if params.len < 1 then exit()
+if not get_shell.host_computer.is_network_active then exit("<color=red>nmap: can't connect. No internet access.")
 
 metaxploit = include_lib("/lib/metaxploit.so")
 if not metaxploit then
 	metaxploit = include_lib(get_shell.host_computer.current_path + "/metaxploit.so")
 	if not metaxploit then metaxploit = include_lib(home_dir + "/metaxploit.so")
 end if
-if not metaxploit then exit("Couldn't locate metaxploit. Please install (correctly).")
+if not metaxploit then exit("<color=red>Couldn't locate metaxploit. Please install (correctly).")
+
 ipAddress = params[0]
 isLanIp = is_lan_ip( ipAddress )
 
 if isLanIp then
 	router = get_router;
-else 
-	router = get_router( ipAddress )
+else
+	if is_valid_ip(ipAddress) then
+		router = get_router( ipAddress )
+	else
+		ipAddress = nslookup(ipAddress)
+		router = get_router(ipAddress)
+	end if
 end if
 
-if router == null then exit("nmap: ip address not found")
+if router == null then exit("<color=red>nmap: ip address not found")
 ports = null
 
 if not isLanIp then
@@ -27,33 +31,59 @@ else
 	ports = router.device_ports(ipAddress)
 end if
 
-if ports == null then exit("nmap: ip address not found")
+if ports == null then exit("<color=red>nmap: ip address not found")
 if typeof(ports) == "string" then exit(ports)
 
-info = "PORT STATE SERVICE VERSION LIB LAN"   
-print("\nStarting nmap v1.1 at " + current_date)
-print("Interesting ports on " + params[0] + "\n")
+hex = {0:"0",1:"1",2:"2",3:"3",4:"4",5:"5",6:"6",7:"7",8:"8",9:"9",10:"A",11:"B",12:"C",13:"D",14:"E",15:"F"}
+
+info = "<color=#FFA500> PORT STATE SERVICE VERSION LAN ESSID BSSID LIB VERSION"   
+print("\n<color=#4fffca>Starting nmap v1.2 at " + current_date)
+print("<color=#4fffca>Interesting ports on <color=yellow>" + ipAddress + "\n")
 if(ports.len == 0) then exit("Scan finished. No open ports.")
 
-libs = []
+rgb_to_hex = function(r,g,b)
+	first_digit = {r:0,g:0,b:0}
+	second_digit = {r:0,g:0,b:0}
+	first_digit[r] = hex[floor(r / 16)]
+	second_digit[r] = hex[((r / 16) % 1) * 16]
+	first_digit[g] = hex[floor(g / 16)]
+	second_digit[g] = hex[((g / 16) % 1) * 16]
+	first_digit[b] = hex[floor(b / 16)]
+	second_digit[b] = hex[((b / 16) % 1) * 16]
+	hex = str(first_digit[r]) + str(second_digit[r]) + str(first_digit[g]) + str(second_digit[g]) + str(first_digit[b]) + str(second_digit[b])
+	return hex
+end function
 
+index = 135
 for port in ports
-	net_session = metaxploit.net_use(ipAddress, port.port_number)
+	net_session = metaxploit.net_use(ipAddress, port)
 	if not net_session then net_session = metaxploit.net_use(ipAddress)
-	if not net_session then exit("Could not establish metaxploit net session")
-	metalib = net_session.dump_lib
+	if not net_session then
+		libversion = "Unavailable"
+		libname = "Unavailable"
+	else
+		libversion = net_session.dump_lib.version
+		libname = net_session.dump_lib.lib_name
+	end if
+	
 	service_info = router.port_info(port)
 	lan_ips = port.get_lan_ip
 	port_status = "OPEN"
-	push = true
-	for lib in libs
-		if lib.lib_name == metalib.lib_name and lib.version == metalib.version then push = false
-	end for
-	if push == true then libs.push(metalib)
 	
 	if(port.is_closed and not isLanIp) then
 		port_status = "CLOSED"
 	end if
-	info = info + "\n" + port.port_number + " " + port_status + " " + service_info + " " + metalib.lib_name + " " + lan_ips
+	colorcode = rgb_to_hex(index, 230, abs(index - 30) % 256)
+	color = "<color=#" + str(colorcode) + ">"
+	info = info + "\n" + color + " " + port.port_number + " " + port_status + " " + service_info + " " + lan_ips + " " + router.essid_name + " " + router.bssid_name + " " + libname + " " + libversion
+	index = abs(index - 30) % 256
 end for
 print(format_columns(info) + "\n")
+
+print("<color=#4fffca>OTHER INFORMATION ")
+kv = router.kernel_version
+print("<color=green>kernel_router.so: "+kv)
+print("\n")
+
+print("<color=#4fffca>WHOIS INFORMATION")
+print("<color=green>" + whois(ipAddress))
